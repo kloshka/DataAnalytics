@@ -69,6 +69,7 @@ DROP TABLE IF EXISTS dim_date CASCADE;
 DROP TABLE IF EXISTS dim_product CASCADE;
 DROP TABLE IF EXISTS dim_category CASCADE;
 DROP TABLE IF EXISTS dim_store CASCADE;
+DROP TABLE IF EXISTS dim_store_location CASCADE;
 DROP TABLE IF EXISTS dim_supplier CASCADE;
 DROP TABLE IF EXISTS dim_seller CASCADE;
 DROP TABLE IF EXISTS dim_pet CASCADE;
@@ -106,51 +107,56 @@ CREATE TABLE dim_category (
     category_name VARCHAR(100) UNIQUE
 );
 
+CREATE TABLE dim_store_location (
+    location_id BIGSERIAL PRIMARY KEY,
+    location VARCHAR(200),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    country VARCHAR(100)
+);
+
 CREATE TABLE dim_store (
     store_id BIGSERIAL PRIMARY KEY,
-    store_name VARCHAR(200),
-    store_location VARCHAR(200),
-    store_city VARCHAR(100),
-    store_state VARCHAR(100),
-    store_country VARCHAR(100),
-    store_phone VARCHAR(30),
-    store_email VARCHAR(200)
+    name VARCHAR(200),
+    location_id BIGINT REFERENCES dim_store_location(location_id),
+    phone VARCHAR(30),
+    email VARCHAR(200)
 );
 
 CREATE TABLE dim_supplier (
     supplier_id BIGSERIAL PRIMARY KEY,
-    supplier_name VARCHAR(200),
-    supplier_contact VARCHAR(200),
-    supplier_email VARCHAR(200),
-    supplier_phone VARCHAR(30),
-    supplier_address TEXT,
-    supplier_city VARCHAR(100),
-    supplier_country VARCHAR(100)
+    name VARCHAR(200),
+    contact VARCHAR(200),
+    email VARCHAR(200),
+    phone VARCHAR(30),
+    address TEXT,
+    city VARCHAR(100),
+    country VARCHAR(100)
 );
 
 CREATE TABLE dim_product (
     product_id INTEGER PRIMARY KEY,
-    product_name VARCHAR(200),
+    name VARCHAR(200),
     category_id BIGINT REFERENCES dim_category(category_id),
-    product_price NUMERIC(10,2),
-    product_quantity INTEGER,
+    price NUMERIC(10,2),
+    quantity INTEGER,
     pet_category VARCHAR(50),
-    product_weight NUMERIC(10,2),
-    product_color VARCHAR(50),
-    product_size VARCHAR(50),
-    product_brand VARCHAR(100),
-    product_material VARCHAR(100),
-    product_description TEXT,
-    product_rating NUMERIC(3,1),
-    product_reviews INTEGER,
-    product_release_date DATE,
-    product_expiry_date DATE,
+    weight NUMERIC(10,2),
+    color VARCHAR(50),
+    size VARCHAR(50),
+    brand VARCHAR(100),
+    material VARCHAR(100),
+    description TEXT,
+    rating NUMERIC(3,1),
+    reviews INTEGER,
+    release_date DATE,
+    expiry_date DATE,
     supplier_id BIGINT REFERENCES dim_supplier(supplier_id)
 );
 
 CREATE TABLE dim_date (
     date_id BIGSERIAL PRIMARY KEY,
-    full_date DATE UNIQUE,
+    date_value DATE UNIQUE,
     year INTEGER,
     month INTEGER,
     day INTEGER
@@ -159,15 +165,16 @@ CREATE TABLE dim_date (
 CREATE TABLE fact_sales (
     fact_id BIGSERIAL PRIMARY KEY,
     source_row_id INTEGER,
-    sale_date_id BIGINT REFERENCES dim_date(date_id),
+    date_id BIGINT REFERENCES dim_date(date_id),
     customer_id INTEGER REFERENCES dim_customer(customer_id),
     pet_id BIGINT REFERENCES dim_pet(pet_id),
     seller_id INTEGER REFERENCES dim_seller(seller_id),
     product_id INTEGER REFERENCES dim_product(product_id),
     store_id BIGINT REFERENCES dim_store(store_id),
     supplier_id BIGINT REFERENCES dim_supplier(supplier_id),
-    sale_quantity INTEGER,
-    sale_total_price NUMERIC(10,2)
+    quantity INTEGER,
+    total_price NUMERIC(10,2),
+    unit_price NUMERIC(10,2)
 );
 
 INSERT INTO dim_customer(
@@ -231,33 +238,46 @@ FROM public.mock_data
 WHERE product_category IS NOT NULL;
 
 
-INSERT INTO dim_store(
-    store_name,
-    store_location,
-    store_city,
-    store_state,
-    store_country,
-    store_phone,
-    store_email
+INSERT INTO dim_store_location(
+    location,
+    city,
+    state,
+    country
 )
 SELECT DISTINCT
-    store_name,
     store_location,
     store_city,
     store_state,
-    store_country,
-    store_phone,
-    store_email
+    store_country
 FROM public.mock_data;
 
+
+INSERT INTO dim_store(
+    name,
+    location_id,
+    phone,
+    email
+)
+SELECT DISTINCT
+    m.store_name,
+    l.location_id,
+    m.store_phone,
+    m.store_email
+FROM public.mock_data m
+JOIN dim_store_location l ON
+    l.location IS NOT DISTINCT FROM m.store_location AND
+    l.city IS NOT DISTINCT FROM m.store_city AND
+    l.state IS NOT DISTINCT FROM m.store_state AND
+    l.country IS NOT DISTINCT FROM m.store_country;
+
 INSERT INTO dim_supplier(
-    supplier_name,
-    supplier_contact,
-    supplier_email,
-    supplier_phone,
-    supplier_address,
-    supplier_city,
-    supplier_country
+    name,
+    contact,
+    email,
+    phone,
+    address,
+    city,
+    country
 )
 SELECT DISTINCT
     supplier_name,
@@ -271,21 +291,21 @@ FROM public.mock_data;
 
 INSERT INTO dim_product(
     product_id,
-    product_name,
+    name,
     category_id,
-    product_price,
-    product_quantity,
+    price,
+    quantity,
     pet_category,
-    product_weight,
-    product_color,
-    product_size,
-    product_brand,
-    product_material,
-    product_description,
-    product_rating,
-    product_reviews,
-    product_release_date,
-    product_expiry_date,
+    weight,
+    color,
+    size,
+    brand,
+    material,
+    description,
+    rating,
+    reviews,
+    release_date,
+    expiry_date,
     supplier_id
 )
 SELECT DISTINCT ON (m.sale_product_id)
@@ -309,18 +329,18 @@ SELECT DISTINCT ON (m.sale_product_id)
 FROM public.mock_data m
 LEFT JOIN dim_category c ON c.category_name = m.product_category
 LEFT JOIN dim_supplier s ON
-    s.supplier_name IS NOT DISTINCT FROM m.supplier_name AND
-    s.supplier_contact IS NOT DISTINCT FROM m.supplier_contact AND
-    s.supplier_email IS NOT DISTINCT FROM m.supplier_email AND
-    s.supplier_phone IS NOT DISTINCT FROM m.supplier_phone AND
-    s.supplier_address IS NOT DISTINCT FROM m.supplier_address AND
-    s.supplier_city IS NOT DISTINCT FROM m.supplier_city AND
-    s.supplier_country IS NOT DISTINCT FROM m.supplier_country
+    s.name IS NOT DISTINCT FROM m.supplier_name AND
+    s.contact IS NOT DISTINCT FROM m.supplier_contact AND
+    s.email IS NOT DISTINCT FROM m.supplier_email AND
+    s.phone IS NOT DISTINCT FROM m.supplier_phone AND
+    s.address IS NOT DISTINCT FROM m.supplier_address AND
+    s.city IS NOT DISTINCT FROM m.supplier_city AND
+    s.country IS NOT DISTINCT FROM m.supplier_country
 WHERE m.sale_product_id IS NOT NULL
 ORDER BY m.sale_product_id, m.id;
 
 INSERT INTO dim_date(
-    full_date,
+    date_value,
     year,
     month,
     day
@@ -335,15 +355,16 @@ WHERE sale_date IS NOT NULL;
 
 INSERT INTO fact_sales(
     source_row_id,
-    sale_date_id,
+    date_id,
     customer_id,
     pet_id,
     seller_id,
     product_id,
     store_id,
     supplier_id,
-    sale_quantity,
-    sale_total_price
+    quantity,
+    total_price,
+    unit_price
 )
 SELECT
     m.id,
@@ -355,10 +376,14 @@ SELECT
     st.store_id,
     sup.supplier_id,
     m.sale_quantity,
-    m.sale_total_price
+    m.sale_total_price,
+    CASE
+        WHEN m.sale_quantity IS NULL OR m.sale_quantity = 0 THEN NULL
+        ELSE ROUND((m.sale_total_price / m.sale_quantity)::NUMERIC, 2)
+    END AS unit_price
 FROM public.mock_data m
 JOIN dim_date d ON
-    d.full_date = m.sale_date
+    d.date_value = m.sale_date
 JOIN dim_customer c ON
     c.customer_id = m.sale_customer_id
 JOIN dim_pet pet ON
@@ -367,24 +392,26 @@ JOIN dim_pet pet ON
     pet.pet_breed IS NOT DISTINCT FROM m.customer_pet_breed
 JOIN dim_seller s ON
     s.seller_id = m.sale_seller_id
+JOIN dim_store_location sl ON
+    sl.location IS NOT DISTINCT FROM m.store_location AND
+    sl.city IS NOT DISTINCT FROM m.store_city AND
+    sl.state IS NOT DISTINCT FROM m.store_state AND
+    sl.country IS NOT DISTINCT FROM m.store_country
 JOIN dim_store st ON
-    st.store_name IS NOT DISTINCT FROM m.store_name AND
-    st.store_location IS NOT DISTINCT FROM m.store_location AND
-    st.store_city IS NOT DISTINCT FROM m.store_city AND
-    st.store_state IS NOT DISTINCT FROM m.store_state AND
-    st.store_country IS NOT DISTINCT FROM m.store_country AND
-    st.store_phone IS NOT DISTINCT FROM m.store_phone AND
-    st.store_email IS NOT DISTINCT FROM m.store_email
+    st.name IS NOT DISTINCT FROM m.store_name AND
+    st.location_id = sl.location_id AND
+    st.phone IS NOT DISTINCT FROM m.store_phone AND
+    st.email IS NOT DISTINCT FROM m.store_email
 JOIN dim_product p ON
     p.product_id = m.sale_product_id
 JOIN dim_supplier sup ON
-    sup.supplier_name IS NOT DISTINCT FROM m.supplier_name AND
-    sup.supplier_contact IS NOT DISTINCT FROM m.supplier_contact AND
-    sup.supplier_email IS NOT DISTINCT FROM m.supplier_email AND
-    sup.supplier_phone IS NOT DISTINCT FROM m.supplier_phone AND
-    sup.supplier_address IS NOT DISTINCT FROM m.supplier_address AND
-    sup.supplier_city IS NOT DISTINCT FROM m.supplier_city AND
-    sup.supplier_country IS NOT DISTINCT FROM m.supplier_country;
+    sup.name IS NOT DISTINCT FROM m.supplier_name AND
+    sup.contact IS NOT DISTINCT FROM m.supplier_contact AND
+    sup.email IS NOT DISTINCT FROM m.supplier_email AND
+    sup.phone IS NOT DISTINCT FROM m.supplier_phone AND
+    sup.address IS NOT DISTINCT FROM m.supplier_address AND
+    sup.city IS NOT DISTINCT FROM m.supplier_city AND
+    sup.country IS NOT DISTINCT FROM m.supplier_country;
 
 SELECT COUNT(*) AS mock_data_rows FROM public.mock_data;
 SELECT COUNT(*) AS fact_sales_rows FROM fact_sales;
@@ -392,8 +419,8 @@ SELECT COUNT(*) AS fact_sales_rows FROM fact_sales;
 -- выручка и количество по категориям.
 SELECT
     c.category_name,
-    SUM(f.sale_quantity) AS total_qty,
-    SUM(f.sale_total_price) AS total_revenue
+    SUM(f.quantity) AS total_qty,
+    SUM(f.total_price) AS total_revenue
 FROM fact_sales f
 JOIN dim_product p ON f.product_id = p.product_id
 JOIN dim_category c ON p.category_id = c.category_id
@@ -402,22 +429,23 @@ ORDER BY total_revenue DESC;
 
 --топ магазинов по выручке.
 SELECT
-    s.store_name,
-    s.store_city,
-    s.store_country,
-    SUM(f.sale_total_price) AS total_revenue
+    s.name,
+    sl.city,
+    sl.country,
+    SUM(f.total_price) AS total_revenue
 FROM fact_sales f
 JOIN dim_store s ON f.store_id = s.store_id
-GROUP BY s.store_name, s.store_city, s.store_country
+JOIN dim_store_location sl ON s.location_id = sl.location_id
+GROUP BY s.name, sl.city, sl.country
 ORDER BY total_revenue DESC
 LIMIT 10;
 
 -- топ поставщиков по выручке.
 SELECT
-    sup.supplier_name,
-    SUM(f.sale_total_price) AS total_revenue
+    sup.name,
+    SUM(f.total_price) AS total_revenue
 FROM fact_sales f
 JOIN dim_supplier sup ON f.supplier_id = sup.supplier_id
-GROUP BY sup.supplier_name
+GROUP BY sup.name
 ORDER BY total_revenue DESC
 LIMIT 10;
