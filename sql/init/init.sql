@@ -228,7 +228,6 @@ FROM public.mock_data
 WHERE sale_seller_id IS NOT NULL
 ORDER BY sale_seller_id, id;
 
--- Категории выносим в отдельное измерение 
 INSERT INTO dim_category(
     category_name
 )
